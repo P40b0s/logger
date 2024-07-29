@@ -1,116 +1,146 @@
 #[macro_use]
 pub mod macro_code;
 use chrono::Local;
-use env_logger::{Builder, Logger};
+//use env_logger::{Builder, Logger};
 use log::{Log, Metadata, Record, SetLoggerError, Level};
-use once_cell::sync::OnceCell;
-use std::{cell::RefCell, collections::VecDeque, fs::{self, OpenOptions}, io::{BufWriter, Write}, path::Path, sync::Mutex};
-use termcolor::{Color, ColorChoice, ColorSpec, WriteColor, StandardStream};
+//use once_cell::sync::OnceCell;
+use std::{cell::RefCell, collections::{HashMap,}, fs::{self, OpenOptions}, io::{BufWriter, Write}, path::Path, sync::Mutex};
+//use termcolor::{Color, ColorChoice, ColorSpec, WriteColor, StandardStream};
 pub use log::{error, info, debug, warn, LevelFilter};
+pub use fern::InitError;
+use owo_colors::{OwoColorize, Style};
+//static LOG: OnceCell<Mutex<VecDeque<CurrentLog>>> = OnceCell::with_value(Mutex::new(VecDeque::new()));
 
-static LOG: OnceCell<Mutex<VecDeque<CurrentLog>>> = OnceCell::with_value(Mutex::new(VecDeque::new()));
-
-#[derive(Clone, Debug)]
-pub struct CurrentLog
-{
-    level : LevelFilter,
-    text: String
-}
-pub struct StructLogger 
-{
-    pub logger: Logger,
-    pub level_filter: LevelFilter,
-}
+pub struct StructLogger {}
 
 impl StructLogger  
 {
-    fn new(level : LevelFilter) -> StructLogger  
+    pub fn new_custom(level: log::LevelFilter, custom_logging_for_crates: Option<&[(&str, LevelFilter)]>) -> Result<(), fern::InitError>
     {
-        let mut builder = Builder::default();
-        builder.filter_level(level);
-        StructLogger  
+        
+        let mut config = fern::Dispatch::new()
+        .level(level);
+        if let Some(custom) = custom_logging_for_crates
         {
-            logger: builder.build(),
-            level_filter: level,
-            
-        }
-    }
-
-    pub fn init(level : LevelFilter) -> Result<(), SetLoggerError> 
-    {
-        let logger = Self::new(level);
-        log::set_max_level(logger.level_filter);
-        log::set_boxed_logger(Box::new(logger))
-    }
-
-    pub fn initialize_logger() -> bool
-    {
-        let logger = StructLogger::init(log::LevelFilter::Debug);
-        if let Ok(_) = logger
-        {
-            return true;
-        }
-        else
-        {
-            println!("Ошибка инициализации логгера! {}", logger.err().unwrap());
-            return false;
-        }
-    }
-    pub fn get_current_log() -> VecDeque<CurrentLog>
-    {
-        let guard = LOG.get().unwrap().lock().unwrap();
-        guard.clone()
-    }
-    pub fn add(level: LevelFilter, text: &str)
-    {
-        let mut guard = LOG.get().unwrap().lock().unwrap();
-        if guard.len() > 1000
-        {
-            guard.pop_back();
-            guard.push_front(CurrentLog{level, text: text.to_owned()});
-        }
-        else
-        {
-            guard.push_front(CurrentLog{level, text: text.to_owned()});
-        }
-    }
-}
-
-impl Log for StructLogger 
-{
-    fn enabled(&self, metadata: &Metadata) -> bool 
-    {
-        self.logger.enabled(metadata)
-    }
-
-    fn log(&self, record: &Record) 
-    {
-        // Check if the record is matched by the logger before logging
-        if self.logger.matches(record) 
-        {
-
-            let log_file = [log_name(), ".log".to_owned()].concat();
-            let level = record.level().to_level_filter();
-            let mut stdout = StandardStream::stdout(ColorChoice::Always);
-            let (record_level, color, log_path) = match level
+            for cl in custom
             {
-                LevelFilter::Error => ("❌ Ошибка", Color::Red, &log_file),
-                LevelFilter::Info => ("💬 Информация", Color::Green, &log_file),
-                LevelFilter::Warn => ("⚠ Предупреждение", Color::Rgb(255, 153, 51), &log_file),
-                LevelFilter::Debug => ("⚙ DEBUG", Color::Rgb(255, 103, 51), &log_file),
-                                _ => ("❓ УРОВЕНЬ НЕ ОПРЕДЕЛЕН", Color::Magenta, &log_file)
-            };
-            _ = stdout.set_color(ColorSpec::new().set_fg(Some(color)));
-
-            let output = format!("{}:{} -> {}", date_now(), record_level, record.args());
-            println!("{}", &output);
-            write_to_file(&output, log_path);
-            StructLogger::add(level, &output);
-            _ = stdout.reset();
+                config = config.level_for(
+                    format!("{}", cl.0),
+                    cl.1,
+                );
+            }
         }
+        //Делаем вывод для терминала и для файла, а файле ansi коды не нужны
+        config.chain(
+            fern::Dispatch::new()
+            .format(|out, message, record| 
+            {
+                let log_file = [log_name(), ".log".to_owned()].concat();
+                let red_style = Style::new()
+                .red();
+    
+                let green_style = Style::new()
+                .green();
+    
+                let module_style = Style::new()
+                .truecolor(24, 216, 152)
+                .on_black();  
+    
+                let warn_style = Style::new()
+                .truecolor(255, 153, 51);
+    
+                let debug_style = Style::new()
+                .truecolor(255, 103, 51);
+    
+                let default_style = Style::new()
+                .white()
+                .on_black();
+                let (record_level, color, log_path) = match record.level()
+                {
+                    Level::Error => ("❌ Ошибка", red_style,  &log_file),
+                    Level::Info => ("💬 Информация", green_style, &log_file),
+                    Level::Warn => ("⚠ Предупреждение", warn_style, &log_file),
+                    Level::Debug => ("⚙ DEBUG", debug_style, &log_file),
+                    _ => ("❓ УРОВЕНЬ НЕ ОПРЕДЕЛЕН", default_style, &log_file)
+                };
+                out.finish(format_args!(
+                    "{}-[{}:{}]:{} -> {}", date_now().style(color), record.target().style(module_style), record.line().unwrap_or(0).style(module_style), record_level.style(color), record.args().style(color)
+                ))
+                
+            })
+            .chain(std::io::stdout()))
+        .chain(
+            fern::Dispatch::new()
+            .format(|out, message, record| 
+            {
+                let log_file = [log_name(), ".log".to_owned()].concat();
+                let (record_level, log_path) = match record.level()
+                {
+                    Level::Error => ("❌ Ошибка",  &log_file),
+                    Level::Info => ("💬 Информация", &log_file),
+                    Level::Warn => ("⚠ Предупреждение", &log_file),
+                    Level::Debug => ("⚙ DEBUG", &log_file),
+                    _ => ("❓ УРОВЕНЬ НЕ ОПРЕДЕЛЕН", &log_file)
+                };
+                out.finish(format_args!(
+                    "{}-[{}:{}]:{} -> {}", date_now(), record.target(), record.line().unwrap_or(0), record_level, record.args()
+                ))
+                
+            })
+            .chain(
+                {
+                    let log_name = [log_name(), ".log".to_owned()].concat();
+                    let path = Path::new("logs").join(&log_name);
+                    let _create_dir = fs::create_dir_all(&path.parent().unwrap());
+                    fern::log_file(path)?
+                }))
+
+        .apply()?;
+        Ok(())
     }
-    fn flush(&self) {}
+
+
+    pub fn new_default() -> Result<(), fern::InitError>
+    {
+        Self::new_custom(log::LevelFilter::Debug, None)
+    }
 }
+
+// impl Log for StructLogger 
+// {
+//     fn enabled(&self, metadata: &Metadata) -> bool 
+//     {
+//         self.logger.enabled(metadata)
+//     }
+
+//     fn log(&self, record: &Record) 
+//     {
+//         // Check if the record is matched by the logger before logging
+//         if self.logger.matches(record) 
+//         {
+
+//             let log_file = [log_name(), ".log".to_owned()].concat();
+//             let level = record.level().to_level_filter();
+//             let mut stdout = StandardStream::stdout(ColorChoice::Always);
+//             let (record_level, color, log_path) = match level
+//             {
+//                 LevelFilter::Error => ("❌ Ошибка", Color::Red, &log_file),
+//                 LevelFilter::Info => ("💬 Информация", Color::Green, &log_file),
+//                 LevelFilter::Warn => ("⚠ Предупреждение", Color::Rgb(255, 153, 51), &log_file),
+//                 LevelFilter::Debug => ("⚙ DEBUG", Color::Rgb(255, 103, 51), &log_file),
+//                                 _ => ("❓ УРОВЕНЬ НЕ ОПРЕДЕЛЕН", Color::Magenta, &log_file)
+//             };
+//             _ = stdout.set_color(ColorSpec::new().set_fg(Some(color)));
+
+//             let output = format!("{}:{} -> {}", date_now(), record_level, record.args());
+//             println!("{}", &output);
+//             write_to_file(&output, log_path);
+//             StructLogger::add(level, &output);
+//             _ = stdout.reset();
+//         }
+//     }
+//     fn flush(&self) {}
+// }
 
 fn date_now() -> String
 {
@@ -157,7 +187,7 @@ mod test
     #[test]
     pub fn test_info()
     {
-        StructLogger::init(log::LevelFilter::Debug).unwrap();
+        StructLogger::new_default();
         debug!("{}", "дебаггер сообщает!");
         error!("{}", "Ошибка! ошииибка!!!");
         info!("{}", "В целях информации предлагаем вам ознакомиться");
@@ -167,10 +197,9 @@ mod test
     #[test]
     pub fn test_info_2()
     {
-        StructLogger::initialize_logger();
+        StructLogger::new_default();
         info!("{}", "Предупреждаю в последний раз1!");
         warn!("{}", "Предупреждаю в последний раз2!");
         error!("{}", "Предупреждаю в последний раз3!");
-        warn!("{:?}", StructLogger::get_current_log());
     }
 }
