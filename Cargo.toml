@@ -5,7 +5,8 @@ edition = "2021"
 
 [dependencies]
 #env_logger="0.11.3"
-fern = "0.7.0"
+fern = {version="0.7.0", features = ["date-based"]}
 log="0.4.22"
 chrono="0.4.38"
 owo-colors="4.1.0"
+rand="*"

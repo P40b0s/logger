@@ -1,10 +1,11 @@
 #[macro_use]
 pub mod macro_code;
-use chrono::Local;
+use chrono::{Days, Local};
 //use env_logger::{Builder, Logger};
 use log::{Log, Metadata, Record, SetLoggerError, Level};
+use rand::Rng;
 //use once_cell::sync::OnceCell;
-use std::{cell::RefCell, collections::{HashMap,}, fs::{self, OpenOptions}, io::{BufWriter, Write}, path::Path, sync::Mutex};
+use std::{cell::{OnceCell, RefCell}, collections::HashMap, fs::{self, OpenOptions}, io::{BufWriter, Write}, path::{Path, PathBuf}, sync::{Mutex, RwLock}};
 //use termcolor::{Color, ColorChoice, ColorSpec, WriteColor, StandardStream};
 pub use log::{error, info, debug, warn, LevelFilter};
 pub use fern::InitError;
@@ -17,7 +18,8 @@ impl StructLogger
 {
     pub fn new_custom(level: log::LevelFilter, custom_logging_for_crates: Option<&[(&str, LevelFilter)]>) -> Result<(), fern::InitError>
     {
-        
+        let path = Path::new("logs");
+        let _create_dir = fs::create_dir_all(&path);
         let mut config = fern::Dispatch::new()
         .level(level);
         if let Some(custom) = custom_logging_for_crates
@@ -31,11 +33,12 @@ impl StructLogger
             }
         }
         //Делаем вывод для терминала и для файла, а файле ansi коды не нужны
-        config.chain(
+        config
+        .chain(
             fern::Dispatch::new()
             .format(|out, message, record| 
             {
-                let log_file = [log_name(), ".log".to_owned()].concat();
+                //let log_file = [log_name(), ".log".to_owned()].concat();
                 let red_style = Style::new()
                 .red();
     
@@ -55,46 +58,48 @@ impl StructLogger
                 let default_style = Style::new()
                 .white()
                 .on_black();
-                let (record_level, color, log_path) = match record.level()
+                let (record_level, color) = match record.level()
                 {
-                    Level::Error => ("❌ Ошибка", red_style,  &log_file),
-                    Level::Info => ("💬 Информация", green_style, &log_file),
-                    Level::Warn => ("⚠ Предупреждение", warn_style, &log_file),
-                    Level::Debug => ("⚙ DEBUG", debug_style, &log_file),
-                    _ => ("❓ УРОВЕНЬ НЕ ОПРЕДЕЛЕН", default_style, &log_file)
+                    Level::Error => ("❌ Ошибка", red_style),
+                    Level::Info => ("💬 Информация", green_style),
+                    Level::Warn => ("⚠ Предупреждение", warn_style),
+                    Level::Debug => ("⚙ DEBUG", debug_style),
+                    _ => ("❓ УРОВЕНЬ НЕ ОПРЕДЕЛЕН", default_style)
                 };
                 out.finish(format_args!(
                     "{}-[{}:{}]:{} -> {}", date_now().style(color), record.target().style(module_style), record.line().unwrap_or(0).style(module_style), record_level.style(color), record.args().style(color)
                 ))
                 
-            })
-            .chain(std::io::stdout()))
+            }).chain(std::io::stdout()))
         .chain(
             fern::Dispatch::new()
             .format(|out, message, record| 
             {
-                let log_file = [log_name(), ".log".to_owned()].concat();
-                let (record_level, log_path) = match record.level()
+                //let log_file = [log_name(), ".log".to_owned()].concat();
+                let record_level = match record.level()
                 {
-                    Level::Error => ("❌ Ошибка",  &log_file),
-                    Level::Info => ("💬 Информация", &log_file),
-                    Level::Warn => ("⚠ Предупреждение", &log_file),
-                    Level::Debug => ("⚙ DEBUG", &log_file),
-                    _ => ("❓ УРОВЕНЬ НЕ ОПРЕДЕЛЕН", &log_file)
+                    Level::Error => "❌ Ошибка",
+                    Level::Info => "💬 Информация",
+                    Level::Warn => "⚠ Предупреждение",
+                    Level::Debug => "⚙ DEBUG",
+                    _ => "❓ УРОВЕНЬ НЕ ОПРЕДЕЛЕН"
                 };
                 out.finish(format_args!(
                     "{}-[{}:{}]:{} -> {}", date_now(), record.target(), record.line().unwrap_or(0), record_level, record.args()
                 ))
-                
             })
             .chain(
-                {
-                    let log_name = [log_name(), ".log".to_owned()].concat();
-                    let path = Path::new("logs").join(&log_name);
-                    let _create_dir = fs::create_dir_all(&path.parent().unwrap());
-                    fern::log_file(path)?
+        {
+                    //let time_now = Local::now().checked_add_days(Days::new(2)).unwrap();
+                    //let log_file_name = time_now.format("%d-%m-%Y").to_string();
+                    //let log_name = [log_name(), ".log".to_owned()].concat();
+                    //let path = Path::new("logs").join(&log_name);
+                    //let _create_dir = fs::create_dir_all(&path.parent().unwrap());
+                   
+                    fern::DateBased::new("logs/", "%Y-%m-%d.log")
+                    //fern::log_reopen1(log_path().as_path(), op.unwrap())?
+                    //fern::log_file(log_path())?
                 }))
-
         .apply()?;
         Ok(())
     }
@@ -142,15 +147,24 @@ impl StructLogger
 //     fn flush(&self) {}
 // }
 
+
 fn date_now() -> String
 {
     let time_now = Local::now();
     time_now.format("[%d-%m-%Y %H:%M:%S]").to_string()
 }
-fn log_name() -> String
+
+fn log_path() -> PathBuf
 {
-    let time_now = Local::now();
-    time_now.format("%d-%m-%Y").to_string()
+   
+    let mut rng = rand::thread_rng();
+    let day: u64 = rng.gen_range(1..20); // generates a float betwe
+    let time_now = Local::now().checked_add_days(Days::new(day)).unwrap();
+    let name = time_now.format("%d-%m-%Y").to_string();
+    let log_name = [name, ".log".to_owned()].concat();
+    let path = Path::new("logs").join(&log_name);
+    let _create_dir = fs::create_dir_all(&path.parent().unwrap());
+    path
 }
 
 fn write_to_file(s: &String, path : &str)
