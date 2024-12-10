@@ -154,18 +154,18 @@ fn date_now() -> String
     time_now.format("[%d-%m-%Y %H:%M:%S]").to_string()
 }
 
-fn log_path() -> PathBuf
-{
+// fn log_path() -> PathBuf
+// {
    
-    let mut rng = rand::thread_rng();
-    let day: u64 = rng.gen_range(1..20); // generates a float betwe
-    let time_now = Local::now().checked_add_days(Days::new(day)).unwrap();
-    let name = time_now.format("%d-%m-%Y").to_string();
-    let log_name = [name, ".log".to_owned()].concat();
-    let path = Path::new("logs").join(&log_name);
-    let _create_dir = fs::create_dir_all(&path.parent().unwrap());
-    path
-}
+//     let mut rng = rand::thread_rng();
+//     let day: u64 = rng.gen_range(1..20); // generates a float betwe
+//     let time_now = Local::now().checked_add_days(Days::new(day)).unwrap();
+//     let name = time_now.format("%d-%m-%Y").to_string();
+//     let log_name = [name, ".log".to_owned()].concat();
+//     let path = Path::new("logs").join(&log_name);
+//     let _create_dir = fs::create_dir_all(&path.parent().unwrap());
+//     path
+// }
 
 fn write_to_file(s: &String, path : &str)
 {
