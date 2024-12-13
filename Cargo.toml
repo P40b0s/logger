@@ -1,12 +1,12 @@
 [package]
 name = "logger"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 [dependencies]
 #env_logger="0.11.3"
-fern = {version="0.7.0", features = ["date-based"]}
+fern = {version="0.7.0", features = ["date-based", "colored"]}
 log="0.4.22"
 chrono="0.4.38"
-owo-colors="4.1.0"
-rand="*"
+#owo-colors="4.1.0"
+colored = "2.1.0"
